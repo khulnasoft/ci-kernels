@@ -1,53 +1,94 @@
-FROM debian:bookworm
+FROM --platform=$BUILDPLATFORM ghcr.io/khulnasoft/ci-kernels-builder:1719090121 AS configure-vmlinux
 
-LABEL org.opencontainers.image.source https://github.com/khulnasoft/ci-kernels
+ARG KERNEL_VERSION
 
-# Preserve the APT cache between runs
-RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+# Download and cache kernel
+COPY download.sh .
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ca-certificates
+RUN --mount=type=cache,target=/tmp/kernel ./download.sh
 
-COPY llvm-snapshot.gpg /usr/share/keyrings
-COPY llvm.list /etc/apt/sources.list.d
-COPY llvm.pref /etc/apt/preferences.d
+WORKDIR /usr/src/linux
 
-# Bake the appropriate clang version into the container
-ARG CLANG_VERSION=16
-ENV CLANG=clang-${CLANG_VERSION}
-ENV LLVM_STRIP=llvm-strip-${CLANG_VERSION}
+COPY ccache.conf /etc/ccache.conf
 
-# Update and install dependencies
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        curl \
-        tar \
-        build-essential \
-        crossbuild-essential-amd64 \
-        crossbuild-essential-arm64 \
-        libncurses5-dev \
-        bison \
-        flex \
-        libssl-dev \
-        bc \
-        xz-utils \
-        ccache \
-        libelf-dev \
-        python3-docutils \
-        python3-pip \
-        pahole \
-        libcap-dev \
-        ${CLANG} \
-        llvm-${CLANG_VERSION} \
-        lld \
-        kmod \
-        rsync \
-        libc6-dev-i386
+COPY configure-vmlinux.sh env.sh config config-arm64 config-x86_64 .
 
-# Install virtme-configkernel
-RUN pip3 install --break-system-packages https://github.com/amluto/virtme/archive/refs/heads/master.zip
+ARG KBUILD_BUILD_TIMESTAMP="Thu  6 Jul 01:00:00 UTC 2023"
+ARG KBUILD_BUILD_HOST="ci-kernels-builder"
+ARG TARGETPLATFORM
+
+RUN ./configure-vmlinux.sh
+
+FROM configure-vmlinux AS build-vmlinux
+
+COPY build-vmlinux.sh .
+
+RUN --mount=type=cache,target=/ccache \
+    ccache -z; \
+    ./build-vmlinux.sh && \
+    ccache -s
+
+# Install vmlinuz
+RUN mkdir -p /tmp/output/boot && \
+    find ./ -type f -name '*Image' -exec cp -v {} /tmp/output/boot/vmlinuz \;
+
+# Install modules in /usr/lib/modules, with a symlink from /lib to
+# /usr/lib. This avoids breaking overlay in merged usr scenarios.
+RUN if [ -d tools/testing/selftests/bpf/bpf_testmod ]; then \
+        make M=tools/testing/selftests/bpf/bpf_testmod INSTALL_MOD_PATH=/tmp/output/usr modules_install; \
+        ln -s usr/lib /tmp/output/lib; \
+    fi
+
+FROM build-vmlinux as build-vmlinux-debug
+
+# Package debug info
+RUN mkdir -p /tmp/debug/boot
+
+COPY copy-debug.sh filter-debug.awk .
+RUN ./copy-debug.sh /tmp/debug
+
+# Build selftests
+FROM build-vmlinux as build-selftests
+
+ARG BUILDPLATFORM
+
+RUN if [ "$BUILDPLATFORM" != "$TARGETPLATFORM" ]; then \
+        echo "Can't cross compile selftests"; exit 1; \
+    fi
+
+COPY build-selftests.sh .
+RUN --mount=type=cache,target=/ccache \
+    ccache -z; \
+    ./build-selftests.sh && \
+    ccache -s
+
+COPY copy-selftests.sh .
+RUN mkdir /tmp/selftests && ./copy-selftests.sh /tmp/selftests
+
+# Prepare the final kernel image
+FROM scratch as vmlinux
+
+LABEL org.opencontainers.image.licenses=GPL-2.0-only
+
+COPY --from=build-vmlinux /tmp/output /
+
+# Debug
+FROM vmlinux as vmlinux-debug
+
+LABEL org.opencontainers.image.licenses=GPL-2.0-only
+
+COPY --from=build-vmlinux-debug /tmp/debug /
+
+# Prepare the selftests image
+FROM vmlinux as selftests-bpf
+
+LABEL org.opencontainers.image.licenses=GPL-2.0-only
+
+COPY --from=build-selftests /tmp/selftests /usr/src/linux
+
+# Debug
+FROM vmlinux-debug as selftests-bpf-debug
+
+LABEL org.opencontainers.image.licenses=GPL-2.0-only
+
+COPY --from=build-selftests /tmp/selftests /usr/src/linux

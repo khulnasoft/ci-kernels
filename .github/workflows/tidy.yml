@@ -1,0 +1,21 @@
+name: Cleanup Untagged Images
+
+on:
+  workflow_dispatch: {}
+  # schedule:
+  #   - cron: '1 23 * * *'
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Remove untagged images
+      run: ./.github/tidy-images.sh "${{ github.repository_owner }}" "ci-kernels"
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

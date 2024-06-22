@@ -1,0 +1,38 @@
+[
+  {
+    "version": "6.9.1",
+    "static_tag": "stable"
+  },
+  {
+    "version": "6.9",
+    "static_tag": "mainline"
+  },
+  {
+    "version": "6.8.10",
+    "static_tag": ""
+  },
+  {
+    "version": "6.6.31",
+    "static_tag": "longterm"
+  },
+  {
+    "version": "6.1.91",
+    "static_tag": ""
+  },
+  {
+    "version": "5.4.276",
+    "static_tag": ""
+  },
+  {
+    "version": "5.15.159",
+    "static_tag": ""
+  },
+  {
+    "version": "5.10.217",
+    "static_tag": ""
+  },
+  {
+    "version": "4.19.314",
+    "static_tag": ""
+  }
+]

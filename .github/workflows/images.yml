@@ -1,0 +1,63 @@
+name: images
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  config:
+    name: Read config
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.kernel.outputs.matrix }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Read versions.json
+      id: kernel
+      run: |
+        {
+          echo "matrix<<EOF"
+          cat versions.json
+          echo -e "\nEOF"
+        } | tee -a "$GITHUB_OUTPUT"
+
+  kernel:
+    name: Kernel
+    needs: config
+    uses: ./.github/workflows/build-and-push.yml
+    strategy:
+      matrix:
+        include: ${{ fromJSON(needs.config.outputs.matrix) }}
+    with:
+      kernel_version: ${{ matrix.version }}
+      build_arm64: ${{ matrix.static_tag != '' }}
+      static_tag: ${{ matrix.static_tag }}
+
+  results:
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    name: Results
+    needs:
+    - kernel
+    steps:
+    - run: exit 1
+      if: >-
+        ${{
+              contains(needs.*.result, 'failure')
+          || contains(needs.*.result, 'cancelled')
+        }}
