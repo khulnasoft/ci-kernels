@@ -24,3 +24,4 @@ read -r -d '' filter <<'EOF'
 EOF
 
 exec curl -sL https://www.kernel.org/releases.json | jq "$jq_semver_cmp""$filter" | tee versions.json
+

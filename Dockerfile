@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM ghcr.io/khulnasoft/ci-kernels-builder:1719090121 AS configure-vmlinux
+FROM --platform=$BUILDPLATFORM ghcr.io/khulnasoft/ci-kernels-builder:1742237377 AS configure-vmlinux
 
 ARG KERNEL_VERSION
 
@@ -40,11 +40,11 @@ RUN if [ -d tools/testing/selftests/bpf/bpf_testmod ]; then \
     fi
 
 # Starting with v6.14-rc1 the location of testmods has changed.
- RUN if [ -d tools/testing/selftests/bpf/test_kmods ]; then \
-         make M=tools/testing/selftests/bpf/test_kmods INSTALL_MOD_PATH=/tmp/output/usr modules modules_install; \
-         ln -s usr/lib /tmp/output/lib; \
-     fi
-     
+RUN if [ -d tools/testing/selftests/bpf/test_kmods ]; then \
+        make M=tools/testing/selftests/bpf/test_kmods INSTALL_MOD_PATH=/tmp/output/usr modules modules_install; \
+        ln -s usr/lib /tmp/output/lib; \
+    fi
+
 FROM build-vmlinux AS build-vmlinux-debug
 
 # Package debug info
