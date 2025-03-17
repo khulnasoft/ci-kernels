@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM ghcr.io/khulnasoft/ci-kernels-builder:1727287467 AS configure-vmlinux
+FROM --platform=$BUILDPLATFORM ghcr.io/khulnasoft/ci-kernels-builder:1719090121 AS configure-vmlinux
 
 ARG KERNEL_VERSION
 
